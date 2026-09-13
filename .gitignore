@@ -1,0 +1,23 @@
+# Python cache & build
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Environments
+.venv/
+env/
+venv/
+ENV/
+
+# Large Model Weights & Data
+models/
+*.gguf
+*.bin
+*.pt
+
+# IDEs & System files
+.vscode/
+.idea/
+.DS_Store
+*.log
