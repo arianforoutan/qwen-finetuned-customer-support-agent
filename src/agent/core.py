@@ -44,7 +44,6 @@ class CustomerSupportAgent:
     """پردازش اند-تو-اند پیام مشتری و اجرای بیزینس‌لاجیک."""
     cleaned_input = user_text.strip().lower()
 
-    # ۱. مدیریت وضعیت انتظار برای تاییدیه (Human-in-the-Loop)
     if (
         session_context
         and session_context.get("status") == "waiting_for_confirmation"
@@ -61,7 +60,6 @@ class CustomerSupportAgent:
       ]
       negative_tokens = ["خیر", "نه", "دست نگه دار", "نمیخوام", "کنسل نکن", "no"]
 
-      # استخراج امن order_id (چه int ذخیره شده باشد چه str)
       raw_order_id = session_context.get("decision", {}).get(
           "entities", {}
       ).get("order_id") or session_context.get("pending_order_id")
@@ -85,10 +83,8 @@ class CustomerSupportAgent:
             "decision": session_context.get("decision"),
         }
       else:
-        # اگر پیام کاربر نامرتبط با تایید/رد بود، سشن لغو منقضی شده و متن جدید تحلیل می‌شود
         session_context = None
 
-    # ۲. ارسال پیام به مغز مدل (Ollama)
     try:
       decision = self.route_message(user_text)
     except Exception as e:
@@ -112,7 +108,6 @@ class CustomerSupportAgent:
     order_id = entities.get("order_id")
     order_id_str = str(order_id) if order_id is not None else None
 
-    # ۳. بررسی اولویت پایگاه دانش برای عبارات مرجوعی/شرایط پس دادن
     knowledge_keywords = [
             "چند روز",
             "پس بدم",
@@ -126,7 +121,6 @@ class CustomerSupportAgent:
         any(kw in cleaned_input for kw in knowledge_keywords)
         and not order_id_str
        ):
-          # تغییر این خط: ارسال متن کاربر به جای رشته ثابت
         res = self.tools.rag_policy_search(user_text)
         return {
               "status": "completed",
@@ -134,8 +128,7 @@ class CustomerSupportAgent:
               "response": res.get("message"),
               "decision": decision,
           }
-    # ۴. بررسی نیاز به شفاف‌سازی (Clarification Guardrail)
-    # اگر قصد لغو یا استعلام است اما شماره سفارشی نیست، اول شماره سفارش بگیر نه تاییدیه
+    
     if (
         needs_clarification
         or (requires_tool and tool_name in ["get_order_status", "cancel_order"] and not order_id_str)
@@ -148,7 +141,6 @@ class CustomerSupportAgent:
           "decision": decision,
       }
 
-    # ۵. بررسی عملیات حساس با داشتن کد سفارش (Confirmation Guardrail)
     if requires_confirmation or intent == "cancel_order":
       return {
           "status": "waiting_for_confirmation",
@@ -158,7 +150,6 @@ class CustomerSupportAgent:
           "decision": decision,
       }
 
-    # ۵. اجرای متناظر ابزارها
     tool_output = ""
     if requires_tool:
       if tool_name == "get_order_status":
@@ -171,7 +162,6 @@ class CustomerSupportAgent:
         res = self.tools.check_inventory(entities.get("product_name", ""))
         tool_output = res.get("message")
       elif tool_name == "rag_policy_search":
-        # ارسال نیت یا متن کاربر به پایگاه دانش
         query_text = (
             intent if intent != "general_inquiry" else user_text
         )

@@ -1,6 +1,5 @@
 """Mock Database and RAG Knowledge Base for Customer Support Agent."""
 
-# ۱. پایگاه داده ماک سفارشات و انبار کالا
 MOCK_DATABASE = {
     "orders": {
         "98234": {
@@ -44,7 +43,6 @@ MOCK_DATABASE = {
     },
 }
 
-# ۲. اسناد متنی قوانین فروشگاه برای بخش RAG
 MOCK_KNOWLEDGE_BASE = {
     "refund_policy": (
         "قوانین مرجوعی و استرداد وجه:\n"

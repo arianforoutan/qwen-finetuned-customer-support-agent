@@ -77,7 +77,6 @@ class SupportTools:
     """استعلام موجودی و قیمت کالا در انبار."""
     norm_query = product_name.strip().lower()
     for prod_name, info in MOCK_DATABASE["inventory"].items():
-      # تطابق کلمات کلیدی
       query_tokens = [w for w in norm_query.split() if len(w) > 2]
       if any(token in prod_name.lower() for token in query_tokens):
         if info["available"]:
@@ -104,7 +103,7 @@ class SupportTools:
     """جستجوی دقیق و معنایی در پایگاه دانش قوانین فروشگاه."""
     query_lower = query.lower()
 
-    # ۱. قوانین مرجوعی و پس دادن کالا
+    # قوانین مرجوعی و پس دادن کالا
     if any(
         k in query_lower
         for k in ["refund", "مرجوع", "پس", "عودت", "استرداد", "چند روز"]
@@ -114,7 +113,7 @@ class SupportTools:
           "message": MOCK_KNOWLEDGE_BASE.get("refund_policy"),
       }
 
-    # ۲. قوانین ارسال و پست
+    # قوانین ارسال و پست
     if any(
         k in query_lower
         for k in ["ship", "ارسال", "پست", "تیپاکس", "هزینه ارسال", "پیک"]
@@ -124,14 +123,14 @@ class SupportTools:
           "message": MOCK_KNOWLEDGE_BASE.get("shipping_methods"),
       }
 
-    # ۳. شرایط گارانتی و ضمانت
+    # ۳شرایط گارانتی و ضمانت
     if any(k in query_lower for k in ["warrant", "گارانتی", "ضمانت", "خراب"]):
       return {
           "status": "success",
           "message": MOCK_KNOWLEDGE_BASE.get("warranty_policy"),
       }
 
-    # ۴. جستجوی متنی کلمات در کل اسناد
+    # جستجوی متنی کلمات در کل اسناد
     for doc in MOCK_KNOWLEDGE_BASE.values():
       if any(token in doc for token in query_lower.split() if len(token) > 2):
         return {"status": "success", "message": doc}

@@ -17,7 +17,6 @@ def run_tests():
   step1 = agent.handle_message("سفارشم با کد ۵۵۴۴۳ رو لغو کنید لطفاً")
   print("پاسخ گاردریل:", step1["response"])
 
-  # مرحله دوم: ارسال سشن به دور بعدی چت جهت تایید
   step2 = agent.handle_message("بله حتما لغوش کنید", session_context=step1)
   print("پاسخ نهایی پس از تایید:", step2["response"])
 
