@@ -33,13 +33,11 @@ def clean_sample(record):
 
     assistant_data = json.loads(record["messages"][2]["content"])
 
-    # یکسان‌سازی کلیدها
     assistant_data["entities"] = {
         ENTITY_KEY_MAP.get(k, k): v
         for k, v in assistant_data.get("entities", {}).items()
     }
 
-    # حل تداخل شکایت با تاخیر
     if assistant_data["intent"] == "general_complaint":
         delay_words = [
             "نرسیده",
@@ -61,7 +59,6 @@ def clean_sample(record):
     return record
 
 
-# خواندن و تمیز کردن داده‌ها
 all_records = []
 seen_texts = set()
 
@@ -71,12 +68,10 @@ with open(RAW_FILE, "r", encoding="utf-8") as f:
             continue
         rec = clean_sample(json.loads(line))
         txt = rec["messages"][1]["content"]
-        # حذف نمونه‌های کاملاً تکراری (Deduplication)
         if txt not in seen_texts:
             seen_texts.add(txt)
             all_records.append(rec)
 
-# بر زدن داده‌ها
 random.seed(42)
 random.shuffle(all_records)
 

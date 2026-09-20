@@ -115,7 +115,7 @@ SYSTEM_PROMPT = "شما موتور تحلیل پیام مشتریان customer-s
 
 
 def generate_batch(intent_name, metadata, batch_size=25):
-    prompt = f"""شما مسئول تولید دیتاست هوش مصنوعی پشتیبانی فروشگاه اینترنتی ایرانی هستید.
+    prompt = f"""شما مسئول تولید دیتاست هوش مصنوعی پشتیبانی فروشگاه اینترنتی فارسی هستید.
 تعداد {batch_size} پیام منحصربه‌فرد، واقع‌گرایانه و کاربردی به زبان فارسی برای Intent زیر بسازید:
 
 Intent: {intent_name}
@@ -144,7 +144,6 @@ Intent: {intent_name}
 
 
 def main():
-    # 5 بچ ۲۵ تایی = ۱۲۵ نمونه برای هر اینتنت (در مجموع حدود ۱,۸۷۵ نمونه)
     batches = 5
     batch_size = 25
     count = 0
@@ -190,7 +189,7 @@ def main():
                         count += 1
                 time.sleep(0.3)
 
-    print(f"\nتولید کامل شد! مجموع نمونه‌ها: {count}")
+    print(f"تولید کامل شد مجموع نمونه‌ها: {count}")
 
 
 if __name__ == "__main__":
