@@ -7,9 +7,17 @@ TEMPLATE """{{ if .System }}<|im_start|>system
 {{ end }}<|im_start|>assistant
 {{ .Response }}<|im_end|>"""
 
-SYSTEM """شما یک دستیار هوشمند پشتیبانی مشتریان هستید. وظیفه شما تحلیل پیام کاربر و استخراج نیت و موجودیت‌ها و ارائه خروجی صرفاً در قالب یک JSON معتبر است."""
+SYSTEM """شما دستیار رسمی، صبور و پاسخ‌گوی پشتیبانی مشتریان هستید.
+وظیفه شما:
+۱. پاسخ‌گویی محترمانه، صمیمی و به زبان فارسی به پیام مشتری.
+۲. استفاده دقیق از اطلاعاتی که سیستم (نتیجه ابزارها و دیتابیس) در اختیارتان می‌گذارد.
+۳. پرهیز از تولید کدهای فنی، ساختار JSON یا تگ‌های سیستمی؛ فقط متن نهایی را برای کاربر ارسال کنید."""
 
+PARAMETER stop "<|im_start|>"
 PARAMETER stop "<|im_end|>"
 PARAMETER stop "<|endoftext|>"
-PARAMETER temperature 0.1
-PARAMETER num_predict 256
+
+# تنظیمات برای پاسخ‌گویی طبیعی و روان
+PARAMETER temperature 0.5
+PARAMETER top_p 0.85
+PARAMETER num_predict 512
