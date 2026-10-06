@@ -1,183 +1,141 @@
-"""Core Engine for Autonomous Customer Support Agent."""
 
-import json
 import re
 from typing import Any, Dict, Optional
 import ollama
 from src.agent.tools import SupportTools
+from src.agent.fast_router import FastRouting
 
 
 class CustomerSupportAgent:
 
-  def __init__(self, model_name: str = "support-agent"):
-    self.model_name = model_name
-    self.tools = SupportTools()
+    def __init__(self, chat_model_name: str = "qwen-support"):
+        self.chat_model_name = chat_model_name
+        self.tools = SupportTools()
+        self.router = FastRouting()
 
-  def _extract_json(self, raw_text: str) -> Dict[str, Any]:
-    """پاکسازی پاسخ مدل و استخراج آبجکت معتبر JSON."""
-    cleaned = raw_text.strip()
-    if "```" in cleaned:
-      matches = re.findall(r"```(?:json)?\s*([\s\S]*?)\s*```", cleaned)
-      if matches:
-        cleaned = matches[0].strip()
+    def _extract_order_id(self, text: str):
+        match = re.search(r"\b\d{4,8}\b", text)
+        return match.group(0) if match else None
 
-    start = cleaned.find("{")
-    end = cleaned.rfind("}")
-    if start != -1 and end != -1:
-      cleaned = cleaned[start : end + 1]
+    def _generate_natural_response(self, user_text: str, intent: str, system_data: str) -> str:
+        prompt = f"""نقش: شما اپراتور پشتیبانی فروشگاه هستید (نه خریدار).
+      پیام مشتری: "{user_text}"
+      نیت مشتری: {intent}
+      اطلاعات پایگاه داده سیستم: "{system_data}"
 
-    return json.loads(cleaned)
+       دستورالعمل: با رعایت ادب و صمیمیت، پاسخی کوتاه از زبان پشتیبان برای مشتری بنویسید. در صورتی که نیاز به تایید لغو بود، از مشتری سوال بپرسید."""
 
-  def route_message(self, user_text: str) -> Dict[str, Any]:
-    """ارسال پیام به اولاما و گرفتن تحلیل ساخت‌یافته."""
-    response = ollama.chat(
-        model=self.model_name,
-        messages=[{"role": "user", "content": user_text}],
-        options={"temperature": 0.1},
-    )
-    raw_content = response["message"]["content"]
-    return self._extract_json(raw_content)
+        try:
+            res = ollama.chat(
+                model=self.chat_model_name,
+                messages=[{"role": "user", "content": prompt}],
+                options={"temperature": 0.3}
+            )
+            return res["message"]["content"].strip()
+        except Exception:
+            return system_data
 
-  def handle_message(
-      self, user_text: str, session_context: Optional[Dict[str, Any]] = None
-  ) -> Dict[str, Any]:
-    """پردازش اند-تو-اند پیام مشتری و اجرای بیزینس‌لاجیک."""
-    cleaned_input = user_text.strip().lower()
+    def handle_message(
+        self, user_text: str, session_context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        cleaned_input = user_text.strip().lower()
 
-    if (
-        session_context
-        and session_context.get("status") == "waiting_for_confirmation"
-    ):
-      positive_tokens = [
-          "بله",
-          "اره",
-          "آره",
-          "تایید",
-          "حتما",
-          "کنسل کن",
-          "لغوش کن",
-          "yes",
-      ]
-      negative_tokens = ["خیر", "نه", "دست نگه دار", "نمیخوام", "کنسل نکن", "no"]
+        if session_context and session_context.get("status") == "waiting_for_confirmation":
+            positive_tokens = ["بله", "اره", "آره", "تایید", "حتما", "کنسل کن", "لغوش کن", "yes"]
+            negative_tokens = ["خیر", "نه", "دست نگه دار", "نمیخوام", "کنسل نکن", "no"]
 
-      raw_order_id = session_context.get("decision", {}).get(
-          "entities", {}
-      ).get("order_id") or session_context.get("pending_order_id")
-      target_id = str(raw_order_id) if raw_order_id else None
+            target_id = session_context.get("pending_order_id")
 
-      if any(tok in cleaned_input for tok in positive_tokens):
-        action_res = self.tools.cancel_order(target_id)
+            if any(tok in cleaned_input for tok in positive_tokens):
+                action_res = self.tools.cancel_order(target_id)
+                final_msg = self._generate_natural_response(
+                    user_text, "order_cancellation_confirmed", action_res.get("message", "")
+                )
+                return {
+                    "status": "completed",
+                    "intent": "order_cancellation_confirmed",
+                    "response": final_msg
+                }
+            elif any(tok in cleaned_input for tok in negative_tokens):
+                return {
+                    "status": "cancelled_by_user",
+                    "intent": "order_cancellation_aborted",
+                    "response": "فرآیند لغو سفارش متوقف شد و سفارش شما همچنان فعال است."
+                }
+            else:
+                session_context = None
+
+        decision = self.router.route(user_text)
+        intent = decision.get("intent", "general_inquiry")
+        requires_tool = decision.get("requires_tool", False)
+        tool_name = decision.get("tool")
+
+        order_id_str = self._extract_order_id(user_text)
+
+        knowledge_keywords = ["چند روز", "پس بدم", "مرجوع", "گارانتی", "قوانین", "شرایط بازگشت", "استرداد"]
+        if any(kw in cleaned_input for kw in knowledge_keywords) and not order_id_str:
+            res = self.tools.rag_policy_search(user_text)
+            final_msg = self._generate_natural_response(user_text, "policy_inquiry", res.get("message", ""))
+            return {
+                "status": "completed",
+                "intent": "policy_inquiry",
+                "response": final_msg,
+                "decision": decision
+            }
+
+        if (requires_tool and tool_name in ["get_order_status", "cancel_order"] and not order_id_str) or \
+           (intent in ["cancel_order", "order_tracking"] and not order_id_str):
+            clarification_raw = "برای پیگیری یا ثبت درخواست، لطفاً شماره سفارش عددی خود را ارسال فرمایید."
+            final_msg = self._generate_natural_response(user_text, "needs_clarification", clarification_raw)
+            return {
+                "status": "needs_clarification",
+                "intent": intent,
+                "response": final_msg,
+                "decision": decision
+            }
+
+        if intent == "cancel_order":
+            confirm_raw = f"آیا مطمئن هستید که می‌خواهید سفارش {order_id_str} را لغو کنید؟ لطفاً با «بله» یا «خیر» اعلام کنید."
+            final_msg = self._generate_natural_response(user_text, "waiting_for_confirmation", confirm_raw)
+            return {
+                "status": "waiting_for_confirmation",
+                "intent": intent,
+                "pending_order_id": order_id_str,
+                "response": final_msg,
+                "decision": decision
+            }
+
+        tool_output = ""
+        
+        if intent == "general_inquiry":
+            tool_output = "کاربر پیامی عمومی و احوال‌پرسی فرستاده است؛ او را خوشامد بگویید و بپرسید چه کمکی از دست شما برمی‌آید."
+            
+        elif requires_tool:
+            if tool_name == "get_order_status":
+                res = self.tools.get_order_status(order_id_str)
+                tool_output = res.get("message", "")
+            elif tool_name == "escalate_shipping":
+                res = self.tools.escalate_shipping(order_id_str)
+                tool_output = res.get("message", "")
+            elif tool_name == "check_inventory":
+                res = self.tools.check_inventory(user_text)
+                tool_output = res.get("message", "")
+            elif tool_name == "rag_policy_search":
+                res = self.tools.rag_policy_search(user_text)
+                tool_output = res.get("message", "")
+            elif tool_name == "register_complaint":
+                res = self.tools.register_complaint(user_text)
+                tool_output = res.get("message", "")
+            else:
+                tool_output = "درخواست شما دریافت شد و در حال پیگیری است."
+        else:
+            tool_output = "درخواست کاربر بدون نیاز به فراخوانی دیتابیس است. راهنمایی لازم را ارائه دهید."
+
+        final_answer = self._generate_natural_response(user_text, intent, tool_output)
+
         return {
             "status": "completed",
-            "intent": "order_cancellation_confirmed",
-            "response": action_res.get("message"),
-            "decision": session_context.get("decision"),
+            "intent": intent,
+            "response": final_answer,
+            "decision": decision
         }
-      elif any(tok in cleaned_input for tok in negative_tokens):
-        return {
-            "status": "cancelled_by_user",
-            "intent": "order_cancellation_aborted",
-            "response": (
-                "فرآیند لغو سفارش لغو شد. وضعیت سفارش شما دست‌نخورده باقی ماند."
-            ),
-            "decision": session_context.get("decision"),
-        }
-      else:
-        session_context = None
-
-    try:
-      decision = self.route_message(user_text)
-    except Exception as e:
-      return {
-          "status": "fallback",
-          "intent": "unknown",
-          "response": (
-              "متأسفانه در پردازش پیام شما خطایی رخ داد؛ شما را به کارشناس"
-              " پشتیبانی متصل می‌کنیم."
-          ),
-          "error": str(e),
-      }
-
-    intent = decision.get("intent", "general_inquiry")
-    entities = decision.get("entities", {})
-    requires_tool = decision.get("requires_tool", False)
-    tool_name = decision.get("tool")
-    requires_confirmation = decision.get("requires_confirmation", False)
-    needs_clarification = decision.get("needs_clarification", False)
-
-    order_id = entities.get("order_id")
-    order_id_str = str(order_id) if order_id is not None else None
-
-    knowledge_keywords = [
-            "چند روز",
-            "پس بدم",
-            "مرجوع",
-            "گارانتی",
-            "قوانین",
-            "شرایط بازگشت",
-            "استرداد",
-        ]
-    if (
-        any(kw in cleaned_input for kw in knowledge_keywords)
-        and not order_id_str
-       ):
-        res = self.tools.rag_policy_search(user_text)
-        return {
-              "status": "completed",
-              "intent": "policy_inquiry",
-              "response": res.get("message"),
-              "decision": decision,
-          }
-    
-    if (
-        needs_clarification
-        or (requires_tool and tool_name in ["get_order_status", "cancel_order"] and not order_id_str)
-        or (intent in ["cancel_order", "order_tracking"] and not order_id_str)
-    ):
-      return {
-          "status": "needs_clarification",
-          "intent": intent,
-          "response": "برای پیگیری یا ثبت درخواست، لطفاً شماره سفارش عددی خود را ارسال فرمایید.",
-          "decision": decision,
-      }
-
-    if requires_confirmation or intent == "cancel_order":
-      return {
-          "status": "waiting_for_confirmation",
-          "intent": intent,
-          "pending_order_id": order_id_str,
-          "response": f"آیا اطمینان قطعی دارید که می‌خواهید سفارش {order_id_str} را لغو کنید؟ لطفاً با «بله» یا «خیر» پاسخ دهید.",
-          "decision": decision,
-      }
-
-    tool_output = ""
-    if requires_tool:
-      if tool_name == "get_order_status":
-        res = self.tools.get_order_status(order_id_str)
-        tool_output = res.get("message")
-      elif tool_name == "escalate_shipping":
-        res = self.tools.escalate_shipping(order_id_str)
-        tool_output = res.get("message")
-      elif tool_name == "check_inventory":
-        res = self.tools.check_inventory(entities.get("product_name", ""))
-        tool_output = res.get("message")
-      elif tool_name == "rag_policy_search":
-        query_text = (
-            intent if intent != "general_inquiry" else user_text
-        )
-        res = self.tools.rag_policy_search(query_text)
-        tool_output = res.get("message")
-      elif tool_name == "register_complaint":
-        res = self.tools.register_complaint(user_text)
-        tool_output = res.get("message")
-      else:
-        tool_output = "درخواست شما دریافت شد و در حال پیگیری است."
-    else:
-      tool_output = "پیام شما دریافت شد. در صورت نیاز به راهنمایی در خدمتیم."
-
-    return {
-        "status": "completed",
-        "intent": intent,
-        "response": tool_output,
-        "decision": decision,
-    }
